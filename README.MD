@@ -1,167 +1,140 @@
-# 3-Tier MERN Application: Manual to Containerized Deployment
+# QuoteScape: 3-Tier MERN Architecture Deployment & Containerization
 
-A DevOps portfolio project demonstrating the migration of a multi-tier MERN (MongoDB, Express.js, React.js, Node.js) web application from a manually provisioned Linux environment to a fully containerized architecture using Docker and Docker Compose.
+**A DevOps Portfolio Project by Wasif ur Rehman**
+
+QuoteScape is a modern, full-stack three-tier application built using the MERN stack (MongoDB, Express.js, React.js, and Node.js). This repository serves as a comprehensive DevOps case study, documenting the lifecycle of the application as it migrates from a manually provisioned Linux environment to a fully containerized, microservices-based deployment.
 
 ---
 
-## Architecture Overview
+## System Architecture & Network Isolation
 
-This application consists of three decoupled layers:
-1.  **Frontend (Presentation Layer)**: A React application built with Vite and served via an optimized Nginx server.
-2.  **Backend (Logic Layer)**: A Node.js and Express.js REST API that handles business logic and acts as the gateway to the data layer.
-3.  **Database (Data Layer)**: A MongoDB database storing persistent application data.
+The architecture is split into three decoupled components, utilizing bridge networking to segregate databases from the public presentation layer:
 
-### Isolated Networks (Network Bridges)
-To maintain security best practices, the database is placed on an isolated network (`backend-db-net`) where it is only reachable by the API server. The React client and API server communicate over a public-facing network (`frontend-backend-net`).
+1.  **Frontend Client**: React.js SPA initialized using Vite, packaged and served efficiently via Nginx.
+2.  **API Gateway**: Node.js and Express.js backend acting as the server logic layer.
+3.  **Database Engine**: MongoDB database instance acting as the state/persistence layer.
 
 ```mermaid
-graph TD
-    Client[Browser Client] <-->|Port 5002| Frontend[Frontend Container: React + Nginx]
-    Frontend <-->|Port 5001 - frontend-backend-net| Backend[Backend Container: Express + Node.js]
-    Backend <-->|Port 27017 - backend-db-net| DB[(Database Container: MongoDB)]
+graph LR
+    User[User Browser] ===|Port 5002| FE[Nginx Frontend Container]
+    FE ===|Port 5001 - Public Net| BE[Node/Express API Container]
+    BE ===|Port 27017 - Private Net| DB[(MongoDB Container)]
 
-    style Client fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#fff
-    style Frontend fill:#311042,stroke:#a855f7,stroke-width:2px,color:#fff
-    style Backend fill:#111827,stroke:#94a3b8,stroke-width:2px,color:#fff
-    style DB fill:#0b0f19,stroke:#10b981,stroke-width:2px,color:#fff
+    style User fill:#0f172a,stroke:#6366f1,stroke-width:2px,color:#fff
+    style FE fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#fff
+    style BE fill:#1f2937,stroke:#94a3b8,stroke-width:2px,color:#fff
+    style DB fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff
 ```
 
----
-
-## Highlights & DevOps Core Concepts
-
-*   **Manual Deployment Lifecycle**: Simulates bare-metal or VM provisioning (packages installation, environment configuration, database seeding, process management using PM2, Nginx routing).
-*   **Multi-Stage Docker Builds**: Frontend Dockerfile utilizes a multi-stage approach (compiling assets with Node.js and copying the static artifacts to Nginx) to keep the final container image size minimal.
-*   **Deterministic Orchestration**: Docker Compose configures service dependencies using `depends_on` alongside custom `healthcheck` scripts, ensuring MongoDB is active before Express starts, and Express is active before Nginx boots.
-*   **Data Persistence**: Uses named Docker volumes (`mongodb_data`) to prevent data loss across container teardowns.
+### Network Topology Security
+To implement strict service isolation:
+*   `frontend-backend-net`: Connects the browser client's Nginx router with the Node.js API container.
+*   `backend-db-net`: Connects the API gateway to the database. The MongoDB instance is entirely isolated from the frontend and external traffic.
 
 ---
 
-## 1. Manual Deployment Guide (VM / Linux)
-To understand the containerization benefit, this guide details how the application was manually provisioned on a Linux system.
+## Core DevOps Concepts Demonstrated
 
-### Step 1: Database Provisioning
-1. Install MongoDB on your Linux server:
-   ```bash
-   sudo apt-get install -y mongodb-org
-   sudo systemctl enable --now mongod
-   ```
-2. Connect to the database shell and seed the initial quotes collection:
-   ```javascript
-   use quotesdb;
-   db.quotes.insertMany([
-     { quote: "Be the change you want to see in the world.", author: "Ghandi" },
-     { quote: "Master patterns in life, and you'll never suffer is the secret.", author: "someone" }
-   ]);
-   ```
-
-### Step 2: Backend API Setup
-1. Install Node.js runtime and PM2 process manager:
-   ```bash
-   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-   sudo apt-get install -y nodejs
-   sudo npm install -g pm2
-   ```
-2. Clone the directory, navigate to `api/`, install production dependencies, and launch with PM2:
-   ```bash
-   cd api/
-   npm install --omit=dev
-   export MONGO_URI="mongodb://localhost:27017/quotesdb"
-   pm2 start server.js --name "quotes-api"
-   ```
-
-### Step 3: Frontend Deployment
-1. Build React static files:
-   ```bash
-   cd ../app/
-   npm install
-   npm run build
-   ```
-2. Install Nginx and configure a server block to serve `/app/dist` and proxy API calls:
-   ```bash
-   sudo apt-get install -y nginx
-   ```
-   Configure `/etc/nginx/sites-available/default`:
-   ```nginx
-   server {
-       listen 5002;
-       root /path/to/app/dist;
-       index index.html;
-
-       location / {
-           try_files $uri $uri/ /index.html;
-       }
-
-       location /api/ {
-           proxy_pass http://localhost:5001;
-       }
-   }
-   ```
-3. Restart Nginx:
-   ```bash
-   sudo systemctl restart nginx
-   ```
+*   **Production Image Size Optimization**: Leveraged multi-stage Docker builds for the React application to exclude node node_modules from the final image, drastically reducing storage foot-print.
+*   **Startup Verification & Dependency Control**: Orchestrated Docker Compose services with explicit health checks (`mongosh --eval` and Node `fetch` status checks) to ensure sequential, error-free container initialization.
+*   **Persistent Storage Configuration**: Utilized named storage volumes for database container lifecycles, ensuring zero loss of persistent data when containers are stopped or rebuilt.
 
 ---
 
-## 2. Containerized Deployment Guide (Docker Compose)
-This is the modern, automated approach where the entire infrastructure is managed as code.
+## Phase 1: Manual VM Deployment Walkthrough
+Below is the deployment log representing how this application is manually set up on a Linux/Ubuntu virtual machine.
 
-### Prerequisites
-*   Docker installed and running.
-*   Docker Compose installed.
-
-### Steps to Run
-1.  **Build the Container Images**:
+### 1. Preparing the Database (MongoDB)
+*   Install MongoDB and ensure the daemon is running:
     ```bash
-    docker compose build
+    sudo apt install -y mongodb
+    sudo systemctl start mongodb
     ```
-2.  **Start the Application Stack**:
+*   Initialize and populate the quotes collection:
     ```bash
-    docker compose up -d
+    mongo
+    > use quotesdb;
+    > db.quotes.insertMany([
+        { quote: "Be the change you want to see in the world.", author: "Ghandi" },
+        { quote: "Master patterns in life, and you'll never suffer is the secret.", author: "someone" }
+      ]);
     ```
-    *This command starts all containers in detched mode. The startup order is MongoDB ➔ Express API ➔ React Nginx, enforced by healthchecks.*
 
-3.  **Access the Application**:
-    *   **Frontend Client**: [http://localhost:5002](http://localhost:5002)
-    *   **Backend API**: [http://localhost:5001/api/quotes](http://localhost:5001/api/quotes)
-    *   **Backend Health Check**: [http://localhost:5001/health](http://localhost:5001/health)
+### 2. Launching the Backend API
+*   Install Node.js (v22+) and configure the global process manager PM2:
+    ```bash
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    sudo apt install -y nodejs
+    sudo npm install -g pm2
+    ```
+*   Set up variables and launch:
+    ```bash
+    cd api/
+    npm install --omit=dev
+    export MONGO_URI="mongodb://localhost:27017/quotesdb"
+    pm2 start server.js --name "quotes-api"
+    ```
 
-4.  **Tear Down the Stack**:
-    To stop the application while keeping data intact:
+### 3. Deploying the Front-End Client
+*   Install Nginx:
+    ```bash
+    sudo apt install nginx -y
+    ```
+*   Build React production assets:
+    ```bash
+    cd ../app/
+    npm install
+    npm run build
+    ```
+*   Update the Nginx default config to point to `/app/dist` and forward API routes:
+    ```nginx
+    server {
+        listen 5002;
+        location / {
+            root /var/www/quotescape/dist;
+            try_files $uri /index.html;
+        }
+        location /api/ {
+            proxy_pass http://localhost:5001;
+        }
+    }
+    ```
+*   Reload Nginx:
+    ```bash
+    sudo systemctl restart nginx
+    ```
+
+---
+
+## Phase 2: Automated Orchestration (Docker Compose)
+
+### 1. Build and Run the Stack
+Run this single command to spin up the isolated presentation, application, and database containers automatically:
+```bash
+docker compose up --build -d
+```
+
+### 2. Verify Deployments
+*   **Web Portal**: [http://localhost:5002](http://localhost:5002)
+*   **API Service**: [http://localhost:5001/api/quotes](http://localhost:5001/api/quotes)
+*   **System Health**: [http://localhost:5001/health](http://localhost:5001/health)
+
+### 3. Tear Down Options
+*   Stop containers without losing data:
     ```bash
     docker compose down
     ```
-    To stop the application and wipe the persistent database volume:
+*   Clean all containers and reset database records:
     ```bash
     docker compose down -v
     ```
 
 ---
 
-## Environment Configuration
+## Environment Variable Schema
 
-The containers are configured using the following environment variables (defined inside `docker-compose.yml`):
-
-| Variable | Service | Default Value | Description |
+| Variable Name | Applied To | Target Endpoint | Description |
 | :--- | :--- | :--- | :--- |
-| `PORT` | `backend` | `5001` | The network port the API server listens on. |
-| `MONGO_URI` | `backend` | `mongodb://db:27017/quotesdb` | MongoDB connection string. |
-| `MONGO_INITDB_DATABASE` | `db` | `quotesdb` | Seeds the name of the database to create inside MongoDB. |
-
----
-
-## Logs and Troubleshooting
-
-*   **View Logs for All Services**:
-    ```bash
-    docker compose logs -f
-    ```
-*   **View Logs for the Backend API Only**:
-    ```bash
-    docker compose logs -f backend
-    ```
-*   **Check Service Statuses**:
-    ```bash
-    docker compose ps
-    ```
+| `PORT` | `backend` | `5001` | Express listener port |
+| `MONGO_URI` | `backend` | `mongodb://db:27017/quotesdb` | Mongoose Connection String |
+| `MONGO_INITDB_DATABASE` | `db` | `quotesdb` | MongoDB Database Name |

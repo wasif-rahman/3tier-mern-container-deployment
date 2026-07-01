@@ -64,8 +64,8 @@ function App() {
     <div className="app-container">
       <header className="header">
         <span className="badge">3-Tier MERN Stack</span>
-        <h1>Quotes Gallery</h1>
-        <p className="subtitle">Manual to Containerized Deployment Showcase</p>
+        <h1>QuoteScape</h1>
+        <p className="subtitle">Manual to Containerized DevOps Deployment Showcase</p>
       </header>
 
       <div className="grid">
