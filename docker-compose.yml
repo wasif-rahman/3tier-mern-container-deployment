@@ -1,0 +1,63 @@
+services:
+  db:
+    image: mongo:7.0
+    container_name: quotes-db
+    restart: always
+    environment:
+      - MONGO_INITDB_DATABASE=quotesdb
+    volumes:
+      - mongodb_data:/data/db
+      - ./db/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - backend-db-net
+
+  backend:
+    build:
+      context: ./api
+    container_name: quotes-api
+    restart: always
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - MONGO_URI=mongodb://db:27017/quotesdb
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5001/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - frontend-backend-net
+      - backend-db-net
+
+  frontend:
+    build:
+      context: ./app
+    container_name: quotes-app
+    restart: always
+    ports:
+      - "5002:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - frontend-backend-net
+
+networks:
+  frontend-backend-net:
+    driver: bridge
+  backend-db-net:
+    driver: bridge
+
+volumes:
+  mongodb_data:
